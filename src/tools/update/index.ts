@@ -1,5 +1,7 @@
+import UpdateAccountTool from "./update-account.tool.js";
 import ApprovePayrollTimesheetTool from "./approve-payroll-timesheet.tool.js";
 import RevertPayrollTimesheetTool from "./revert-payroll-timesheet.tool.js";
+import SwitchTenantTool from "./switch-tenant.tool.js";
 import UpdateBankTransactionTool from "./update-bank-transaction.tool.js";
 import UpdateContactTool from "./update-contact.tool.js";
 import UpdateCreditNoteTool from "./update-credit-note.tool.js";
@@ -9,6 +11,7 @@ import AddTimesheetLineTool from "./update-payroll-timesheet-add-line.tool.js";
 import UpdatePayrollTimesheetLineTool
   from "./update-payroll-timesheet-update-line.tool.js";
 import UpdateManualJournalTool from "./update-manual-journal-tool.js";
+import UpdatePurchaseOrderTool from "./update-purchase-order.tool.js";
 import UpdateQuoteTool from "./update-quote.tool.js";
 import UpdateTrackingCategoryTool from "./update-tracking-category.tool.js";
 import UpdateTrackingOptionsTool from "./update-tracking-options.tool.js";
@@ -26,5 +29,8 @@ export const UpdateTools = [
   UpdatePayrollTimesheetLineTool,
   RevertPayrollTimesheetTool,
   UpdateTrackingCategoryTool,
-  UpdateTrackingOptionsTool
+  UpdateTrackingOptionsTool,
+  UpdateAccountTool,
+  SwitchTenantTool,
+  UpdatePurchaseOrderTool
 ];

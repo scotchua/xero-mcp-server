@@ -3,6 +3,7 @@ import { BankTransaction } from "xero-node";
 import { getClientHeaders } from "../helpers/get-client-headers.js";
 import { XeroClientResponse } from "../types/tool-response.js";
 import { formatError } from "../helpers/format-error.js";
+import { assertGuidForFilter } from "../helpers/assert-xero-filter-safe.js";
 
 async function getBankTransactions(
   page: number,
@@ -10,9 +11,13 @@ async function getBankTransactions(
 ): Promise<BankTransaction[]> {
   await xeroClient.authenticate();
 
+  const where = bankAccountId
+    ? `BankAccount.AccountID=guid("${assertGuidForFilter(bankAccountId, "bankAccountId")}")`
+    : undefined;
+
   const response = await xeroClient.accountingApi.getBankTransactions(xeroClient.tenantId,
       undefined, // ifModifiedSince
-      bankAccountId ? `BankAccount.AccountID=guid("${bankAccountId}")` : undefined, // where
+      where, // where
       "Date DESC", // order
       page, // page
       undefined, // unitdp

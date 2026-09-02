@@ -3,6 +3,7 @@ import { XeroClientResponse } from "../types/tool-response.js";
 import { formatError } from "../helpers/format-error.js";
 import { CreditNote } from "xero-node";
 import { getClientHeaders } from "../helpers/get-client-headers.js";
+import { assertGuidForFilter } from "../helpers/assert-xero-filter-safe.js";
 
 async function getCreditNotes(
   contactId: string | undefined,
@@ -10,10 +11,14 @@ async function getCreditNotes(
 ): Promise<CreditNote[]> {
   await xeroClient.authenticate();
 
+  const where = contactId
+    ? `Contact.ContactID=guid("${assertGuidForFilter(contactId, "contactId")}")`
+    : undefined;
+
   const response = await xeroClient.accountingApi.getCreditNotes(
     xeroClient.tenantId,
     undefined, // ifModifiedSince
-    contactId ? `Contact.ContactID=guid("${contactId}")` : undefined, // where
+    where, // where
     "UpdatedDateUTC DESC", // order
     page, // page
     undefined, // unitdp

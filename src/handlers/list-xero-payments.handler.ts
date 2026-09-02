@@ -3,6 +3,10 @@ import { XeroClientResponse } from "../types/tool-response.js";
 import { formatError } from "../helpers/format-error.js";
 import { Payment } from "xero-node";
 import { getClientHeaders } from "../helpers/get-client-headers.js";
+import {
+  assertGuidForFilter,
+  assertSafeFilterString,
+} from "../helpers/assert-xero-filter-safe.js";
 
 async function getPayments(
   page: number = 1,
@@ -24,16 +28,24 @@ async function getPayments(
   const whereConditions: string[] = [];
 
   if (invoiceId) {
-    whereConditions.push(`Invoice.InvoiceID==guid("${invoiceId}")`);
+    whereConditions.push(
+      `Invoice.InvoiceID==guid("${assertGuidForFilter(invoiceId, "invoiceId")}")`,
+    );
   }
   if (invoiceNumber) {
-    whereConditions.push(`Invoice.InvoiceNumber=="${invoiceNumber}"`);
+    whereConditions.push(
+      `Invoice.InvoiceNumber=="${assertSafeFilterString(invoiceNumber, "invoiceNumber")}"`,
+    );
   }
   if (paymentId) {
-    whereConditions.push(`PaymentID==guid("${paymentId}")`);
+    whereConditions.push(
+      `PaymentID==guid("${assertGuidForFilter(paymentId, "paymentId")}")`,
+    );
   }
   if (reference) {
-    whereConditions.push(`Reference=="${reference}"`);
+    whereConditions.push(
+      `Reference=="${assertSafeFilterString(reference, "reference")}"`,
+    );
   }
 
   // Combine conditions
