@@ -205,9 +205,10 @@ Use `list-tenants` to see every connected organisation and which one is currentl
 - `list-bank-transfers`: Retrieve a list of bank transfers
 - `list-attachments`: List the attachments on a Xero entity
 - `list-journals`: Retrieve general ledger journals
+- `list-purchase-orders`: Retrieve a list of purchase orders
 - `create-bank-transaction`: Create a new bank transaction
 - `create-contact`: Create a new contact
-- `create-credit-note`: Create a new credit note
+- `create-credit-note`: Create a new credit note (sales, or a vendor/supplier credit note via `type: ACCPAYCREDIT`)
 - `create-invoice`: Create a new invoice
 - `create-item`: Create a new item
 - `create-manual-journal`: Create a new manual journal
@@ -219,6 +220,7 @@ Use `list-tenants` to see every connected organisation and which one is currentl
 - `create-account`: Create a new account in the chart of accounts
 - `create-bank-transfer`: Create a transfer between two bank accounts
 - `upload-attachment`: Upload a file as an attachment to a Xero entity
+- `create-purchase-order`: Create a draft purchase order
 - `update-bank-transaction`: Update an existing bank transaction
 - `update-contact`: Update an existing contact
 - `update-invoice`: Update an existing draft invoice
@@ -229,6 +231,7 @@ Use `list-tenants` to see every connected organisation and which one is currentl
 - `update-tracking-category`: Update an existing tracking category
 - `update-tracking-options`: Update tracking options
 - `update-account`: Update an existing account, or archive it
+- `update-purchase-order`: Update an existing purchase order, or approve/delete it via status
 - `switch-tenant`: Switch the active Xero organisation
 - `update-payroll-timesheet-line`: Update a line on an existing Payroll Timesheet
 - `approve-payroll-timesheet`: Approve a Payroll Timesheet
@@ -240,6 +243,7 @@ Use `list-tenants` to see every connected organisation and which one is currentl
 - `get-payroll-timesheet`: Retrieve an existing Payroll Timesheet
 - `get-account`: Retrieve a single account by ID
 - `get-attachment`: Download an attachment from a Xero entity
+- `get-invoice-pdf`: Retrieve an invoice or bill as a PDF
 
 For detailed API documentation, please refer to the [MCP Protocol Specification](https://modelcontextprotocol.io/).
 

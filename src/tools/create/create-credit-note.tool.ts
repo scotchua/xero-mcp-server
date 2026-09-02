@@ -2,6 +2,7 @@ import { z } from "zod";
 import { createXeroCreditNote } from "../../handlers/create-xero-credit-note.handler.js";
 import { DeepLinkType, getDeepLink } from "../../helpers/get-deeplink.js";
 import { CreateXeroTool } from "../../helpers/create-xero-tool.js";
+import { CreditNote } from "xero-node";
 
 const lineItemSchema = z.object({
   description: z.string(),
@@ -21,9 +22,15 @@ const CreateCreditNoteTool = CreateXeroTool(
     contactId: z.string(),
     lineItems: z.array(lineItemSchema),
     reference: z.string().optional(),
+    type: z.enum(["ACCRECCREDIT", "ACCPAYCREDIT"]).optional().describe(
+      "The type of credit note to create. ACCRECCREDIT is a sales credit note issued to a customer \
+      (the default). ACCPAYCREDIT is a vendor/supplier credit note, sometimes called a debit note or a bill credit.",
+    ),
   },
-  async ({ contactId, lineItems, reference }) => {
-    const result = await createXeroCreditNote(contactId, lineItems, reference);
+  async ({ contactId, lineItems, reference, type }) => {
+    const creditNoteType =
+      type === "ACCPAYCREDIT" ? CreditNote.TypeEnum.ACCPAYCREDIT : CreditNote.TypeEnum.ACCRECCREDIT;
+    const result = await createXeroCreditNote(contactId, lineItems, reference, creditNoteType);
     if (result.isError) {
       return {
         content: [
