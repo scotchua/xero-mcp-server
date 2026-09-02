@@ -4,10 +4,11 @@ This is a Model Context Protocol (MCP) server implementation for Xero. It provid
 
 ## Features
 
-- Xero OAuth2 authentication with custom connections
+- Xero OAuth2 authentication with custom connections, a bearer token, or a multi-organisation PKCE auth-code flow
 - Contact management
 - Chart of Accounts management
 - Invoice creation and management
+- Bank transfers, attachments, and general ledger journals
 - MCP protocol compliance
 
 ## Prerequisites
@@ -53,8 +54,8 @@ Custom connections require different scopes depending on when they were created.
 
 | Custom Connection Created | Required Scopes |
 |---------------------------|-----------------|
-| Before Apr 29, 2026 | [SCOPES_V1](src/clients/xero-client.ts#L82-L90) (bundled permissions) |
-| From Apr 29, 2026 | [SCOPES_V2](src/clients/xero-client.ts#L93-L112) (granular permissions) |
+| Before Apr 29, 2026 | [SCOPES_V1](src/clients/xero-client.ts#L154-L162) (bundled permissions) |
+| From Apr 29, 2026 | [SCOPES_V2](src/clients/xero-client.ts#L165-L181) (granular permissions) |
 
 > **Note:** The MCP server automatically tries V1 scopes first and falls back to V2 if needed.
 > 
@@ -134,6 +135,44 @@ payroll.employees
 payroll.timesheets
 ```
 
+#### 3. Auth Code (PKCE) — Multiple Organisations
+
+This is the right choice for a firm connecting more than one Xero organisation (e.g. several client files) through a single app authorization. Unlike Custom Connections, one authorization can cover several organisations, and the MCP server exposes tools to list and switch between them at runtime.
+
+```json
+{
+  "mcpServers": {
+    "xero": {
+      "command": "npx",
+      "args": ["-y", "@xeroapi/xero-mcp-server@latest"],
+      "env": {
+        "XERO_CLIENT_ID": "your_client_id_here",
+        "XERO_CLIENT_SECRET": "your_client_secret_here",
+        "XERO_AUTH_MODE": "auth_code"
+      }
+    }
+  }
+}
+```
+
+Before the MCP client connects, authorize once from a terminal:
+
+```
+npm run login
+```
+
+This opens a browser to Xero's consent screen; pick every organisation this app should have access to, then close the tab. Tokens (including the refresh token) are stored at `~/.xero-mcp/tokens.json` by default, so you generally only need to do this once, or again after adding access to a new organisation. Re-run `npm run login` any time to add more organisations to the same authorization.
+
+Optional environment variables for this mode:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `XERO_CALLBACK_PORT` | `3000` | Local port the login flow's OAuth callback listens on. |
+| `XERO_TOKEN_STORE_PATH` | `~/.xero-mcp/tokens.json` | Where the token set is persisted. |
+| `XERO_REQUIRE_EXPLICIT_TENANT_FOR_WRITES` | `true` | When more than one organisation is connected, a **write** (create/update/delete) tool call must pass an explicit `tenantId`, so a write can never silently land on the wrong organisation. Reads fall back to the active tenant (set with `switch-tenant`). Set to `false` to opt back into the permissive behaviour for a single-operator setup. |
+| `XERO_FILES_DIR` | *(unset)* | Directory `upload-attachment`'s `filePath` input is confined to. Without it, `upload-attachment` only accepts base64 file content. |
+
+Use `list-tenants` to see every connected organisation and which one is currently active, and `switch-tenant` to change the active one.
 
 ### Available MCP Commands
 
@@ -162,6 +201,10 @@ payroll.timesheets
 - `list-aged-payables-by-contact`: Retrieves aged payables for a contact
 - `list-contact-groups`: Retrieve a list of contact groups
 - `list-tracking-categories`: Retrieve a list of tracking categories
+- `list-tenants`: List Xero organisations connected to this app's authorization
+- `list-bank-transfers`: Retrieve a list of bank transfers
+- `list-attachments`: List the attachments on a Xero entity
+- `list-journals`: Retrieve general ledger journals
 - `create-bank-transaction`: Create a new bank transaction
 - `create-contact`: Create a new contact
 - `create-credit-note`: Create a new credit note
@@ -173,6 +216,9 @@ payroll.timesheets
 - `create-payroll-timesheet`: Create a new Payroll Timesheet
 - `create-tracking-category`: Create a new tracking category
 - `create-tracking-option`: Create a new tracking option
+- `create-account`: Create a new account in the chart of accounts
+- `create-bank-transfer`: Create a transfer between two bank accounts
+- `upload-attachment`: Upload a file as an attachment to a Xero entity
 - `update-bank-transaction`: Update an existing bank transaction
 - `update-contact`: Update an existing contact
 - `update-invoice`: Update an existing draft invoice
@@ -182,12 +228,18 @@ payroll.timesheets
 - `update-credit-note`: Update an existing draft credit note
 - `update-tracking-category`: Update an existing tracking category
 - `update-tracking-options`: Update tracking options
+- `update-account`: Update an existing account, or archive it
+- `switch-tenant`: Switch the active Xero organisation
 - `update-payroll-timesheet-line`: Update a line on an existing Payroll Timesheet
 - `approve-payroll-timesheet`: Approve a Payroll Timesheet
 - `revert-payroll-timesheet`: Revert an approved Payroll Timesheet
 - `add-payroll-timesheet-line`: Add new line on an existing Payroll Timesheet
 - `delete-payroll-timesheet`: Delete an existing Payroll Timesheet
+- `delete-account`: Delete an account from the chart of accounts
+- `delete-bank-transaction`: Delete a spend or receive money bank transaction
 - `get-payroll-timesheet`: Retrieve an existing Payroll Timesheet
+- `get-account`: Retrieve a single account by ID
+- `get-attachment`: Download an attachment from a Xero entity
 
 For detailed API documentation, please refer to the [MCP Protocol Specification](https://modelcontextprotocol.io/).
 

@@ -10,7 +10,10 @@
   },
   "author": "Xero (https://xero.com)",
   "type": "module",
-  "bin": "./dist/index.js",
+  "bin": {
+    "xero-mcp-server": "./dist/index.js",
+    "xero-mcp-login": "./dist/login.js"
+  },
   "files": [
     "dist"
   ],
@@ -18,6 +21,7 @@
     "build": "tsc && shx chmod +x dist/*.js",
     "prepare": "npm run build",
     "watch": "tsc --watch",
+    "login": "npm run build && node dist/login.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint:fix": "eslint --fix",
