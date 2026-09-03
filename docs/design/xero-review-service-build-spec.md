@@ -486,8 +486,10 @@ Move `core/` into `~/Claude/platform/review-core/`, repoint both engines. Prove 
 
 ---
 
-## 16. Decisions still open for Scott
+## 16. Decisions, settled 2026-09-03 (Scott Edwards)
 
-1. **Repository home.** `~/Claude/platform/xero-review-service` as a new private GitHub repo beside the QBO ones, or a directory in an existing platform repo? Default if unanswered: new repo, same visibility as `qbo-review-service`.
-2. **Demo Company as the fixture.** It resets periodically, so the snapshot in `fixtures/` becomes the frozen truth. Acceptable, or do you want a synthetic anonymised fixture like `harborview-equipment` generated from a pilot run through `anonymize_run.py`? Default: Demo Company snapshot first, anonymised pilot fixture added at Phase 4.
-3. **Phase 5 timing.** Extract the shared core right after Phase 4, or leave the copies in place until a third platform or a QBO engine change forces it? Default: leave until forced; the provenance manifest keeps drift honest.
+Design is settled; only execution remains. Nothing in sections 0 to 15 is open.
+
+1. **Repository home: new private repo** `scotchua/xero-review-service`, cloned to `~/Claude/platform/xero-review-service`, same visibility as `qbo-review-service`. `xero-collector` is a directory inside it, not a third repo, unless Phase 0 finds a reason to share it with another consumer.
+2. **Fixture: Demo Company (US) snapshot first.** Phase 1 freezes it under `fixtures/demo-company-us/` and adds the slug to `FIXTURE_SLUGS`. An anonymised pilot fixture generated through `anonymize_run.py` is a Phase 4 deliverable, not earlier.
+3. **Phase 5 timing: leave until forced.** The copied `core/` modules stay in place with `PROVENANCE.json`. Extraction happens only when a third platform arrives or a QBO engine change has to be mirrored into the Xero copy. Until then, any bug fix to a copied module is applied in both places and noted in `PROVENANCE.json`.
