@@ -146,39 +146,43 @@ abstract class MCPXeroClient extends XeroClient {
   }
 }
 
+// Legacy bundled scopes: deprecated, still accepted by apps created before
+// Apr 29, 2026.
+export const XERO_SCOPES_V1 = [
+  "accounting.transactions",
+  "accounting.contacts",
+  "accounting.settings",
+  "accounting.reports.read",
+  "payroll.settings",
+  "payroll.employees",
+  "payroll.timesheets",
+];
+
+// Granular scopes: required for apps created from Apr 29, 2026.
+export const XERO_SCOPES_V2 = [
+  "accounting.invoices",
+  "accounting.payments",
+  "accounting.banktransactions",
+  "accounting.manualjournals",
+  "accounting.journals.read",
+  "accounting.reports.aged.read",
+  "accounting.reports.balancesheet.read",
+  "accounting.reports.profitandloss.read",
+  "accounting.reports.trialbalance.read",
+  "accounting.contacts",
+  "accounting.settings",
+  "accounting.attachments",
+  "payroll.settings",
+  "payroll.employees",
+  "payroll.timesheets",
+];
+
 class CustomConnectionsXeroClient extends MCPXeroClient {
   private readonly clientId: string;
   private readonly clientSecret: string;
 
-  // Legacy scopes (deprecated but still supported for existing apps)
-  private readonly XERO_DEFAULT_AUTH_SCOPES_V1 = [
-    "accounting.transactions",
-    "accounting.contacts",
-    "accounting.settings",
-    "accounting.reports.read",
-    "payroll.settings",
-    "payroll.employees",
-    "payroll.timesheets",
-  ].join(" ");
-
-  // Granular scopes (required for new apps)
-  private readonly XERO_DEFAULT_AUTH_SCOPES_V2 = [
-    "accounting.invoices",
-    "accounting.payments",
-    "accounting.banktransactions",
-    "accounting.manualjournals",
-    "accounting.journals.read",
-    "accounting.reports.aged.read",
-    "accounting.reports.balancesheet.read",
-    "accounting.reports.profitandloss.read",
-    "accounting.reports.trialbalance.read",
-    "accounting.contacts",
-    "accounting.settings",
-    "accounting.attachments",
-    "payroll.settings",
-    "payroll.employees",
-    "payroll.timesheets",
-  ].join(" ");
+  private readonly XERO_DEFAULT_AUTH_SCOPES_V1 = XERO_SCOPES_V1.join(" ");
+  private readonly XERO_DEFAULT_AUTH_SCOPES_V2 = XERO_SCOPES_V2.join(" ");
 
   constructor(config: {
     clientId: string;
@@ -295,9 +299,12 @@ class BearerTokenXeroClient extends MCPXeroClient {
 }
 
 const XERO_ISSUER = new URL("https://identity.xero.com");
-const XERO_AUTH_CODE_SCOPES =
+// Defaults to granular scopes: the auth-code flow is used with newly
+// registered apps, which Xero no longer lets request the bundled V1 scopes.
+// Apps created before Apr 29, 2026 can set XERO_SCOPES to the V1 list.
+export const XERO_AUTH_CODE_SCOPES =
   process.env.XERO_SCOPES ??
-  "openid profile email offline_access accounting.transactions accounting.contacts accounting.settings accounting.reports.read accounting.attachments accounting.journals.read payroll.settings payroll.employees payroll.timesheets";
+  ["openid", "profile", "email", "offline_access", ...XERO_SCOPES_V2].join(" ");
 
 /**
  * Interactive OAuth2 + PKCE authorization-code flow. Unlike the Custom

@@ -15,6 +15,7 @@ Internal name: "Xero audit engine." Every client-facing document is titled **Com
 - **Rewrite the pull layer and the check bodies against Xero's data model.** The check *intent* transfers almost one for one; the check *source* does not. Xero's Journals endpoint is a better general ledger than QBO's report, Xero exposes voided and deleted records with no 30-day cap, and the 1099 report exists natively. Xero also has no reconciled-through date, no discrepancy account, no sub-accounts, and no payroll for US orgs.
 - **US-only scope.** Both current Xero clients are US-domiciled (Scott, this session), so the TAX section (S-corp compensation, 1099, Ketchikan sales tax, WA B&O) transfers as-is.
 - **Direct Xero API from Python, read-only scopes, its own app registration.** Not through the MCP server, not sharing the MCP server's token file (refresh-token rotation makes two writers unsafe).
+- **Local first, built to move.** The engine runs on Scott's machine for the pilots and is written so it can run on a hosted server later without a rewrite: storage, tokens, client roster, run locking and the OAuth redirect each sit behind one small interface with a local implementation now and a hosted one later (section 4A). The hosted target is not chosen yet, and no client tenant connects to a hosted copy until that target is approved under the MHPE acceptable use policy.
 - **Target: roughly 85 to 95 declared checks** after dropping the ones Xero makes structurally impossible and adding the Xero-native ones. The exact count is fixed at the end of Phase 0, when the nine PROBE items in section 14 are settled against live tenants. A declared check that goes silent fails the run, exactly as in the QBO engine.
 
 ---
@@ -93,8 +94,17 @@ Client output tree is unchanged: `~/Claude/clients/<slug>/reviews/audit-<YYYY-MM
 
 ## 4. Auth and collector (`xero-collector`)
 
-- **Grant type:** OAuth2 authorization code with PKCE (the flow `xero-mcp-server/src/login.ts` already implements in TypeScript; port the shape, not the code). Custom Connections (client credentials) were regionally restricted to AU/NZ/UK when last checked and are billed per org; **PROBE-1** confirms US availability, but the design does not depend on it.
-- **Own app registration** in the Xero developer portal: "MHPE Review Engine". **Read-only scopes only:** `offline_access openid profile email accounting.settings.read accounting.contacts.read accounting.transactions.read accounting.reports.read accounting.journals.read accounting.attachments.read accounting.budgets.read`. No write scope is ever requested, so "nothing is ever written to Xero" is enforced by the token, not by discipline.
+- **Grant type:** OAuth2 authorization code with a client secret, plus PKCE (the flow `xero-mcp-server/src/login.ts` already implements in TypeScript; port the shape, not the code). Custom Connections (client credentials) were regionally restricted to AU/NZ/UK when last checked and are billed per org; **PROBE-1** confirms US availability, but the design does not depend on it.
+- **App registrations (created 2026-10-16, Xero developer portal).** Two apps, kept separate so the review engine can never hold a write-capable credential:
+
+  | App | Used by | Type | Redirect |
+  |---|---|---|---|
+  | MHPE Zero MCP | MCP server (`xero-mcp-server`) | Web app | `http://localhost:3000/callback` |
+  | MHPE Books Collector (original PKCE registration) | Held for evaluating Xero's hosted Remote MCP, which requires PKCE | PKCE | `http://localhost:3000/callback` |
+  | MHPE Books Collector (**not yet created**) | Review engine (`xero-collector`) | Web app | `http://localhost:8766/callback` |
+
+  Client ids and secrets live in 1Password, never in a repo or chat. Both apps are Web apps, so each has a **client secret**; the collector reads its own from a local `.env` (`XERO_REVIEW_CLIENT_ID`, `XERO_REVIEW_CLIENT_SECRET`) and never shares the MCP server's credentials or token file. Books Collector was first registered as a PKCE app; its Web app replacement is still to be created (before Phase 0 needs it). The PKCE registration is kept on purpose to test Xero's hosted Remote MCP (`https://api.xero.com/mcp/v1`) as a possible replacement for the self-hosted MCP server; rename it in the portal so the two Books Collector entries can't be confused, and delete it if that evaluation ends with keeping the self-hosted server. The review engine never uses it. The MCP server's registered redirect uses port 3000, its code default, so no `XERO_CALLBACK_PORT` override is needed. Both existing apps register port 3000; that is fine because each app's redirect list is separate, but only one login can run on this machine at a time. The collector's callback listener binds port 8766, and the redirect it sends must match the registration exactly.
+- **Books Collector scopes: read-only, granular.** Xero apps created after March 2026 must request granular scopes; the broad `accounting.transactions.read` and `accounting.reports.read` are legacy (Xero's Remote MCP tool table, pasted by Scott 2026-10-16, lists only granular scopes). Request: `offline_access openid profile email accounting.settings.read accounting.contacts.read accounting.invoices.read accounting.payments.read accounting.banktransactions.read accounting.manualjournals.read accounting.journals.read accounting.attachments.read accounting.budgets.read accounting.reports.profitandloss.read accounting.reports.balancesheet.read accounting.reports.trialbalance.read accounting.reports.aged.read accounting.reports.tenninetynine.read`. The 1099 scope comes from Xero's OpenAPI spec v19.1.0, which otherwise still documents only the legacy scopes, so it cannot settle the rest. Bank Summary, Executive Summary and Budget Summary have no granular report scope in either source; **PROBE-12** finds the scope each needs (possibly `accounting.reports.read` is still accepted for those, possibly a newer granular name). No write scope is ever requested, so "nothing is ever written to Xero" is enforced by the token, not by discipline.
 - **Token store:** `~/.xero-review/tokens.json` (mode 0600, atomic write). Separate from the MCP server's `~/.xero-mcp/tokens.json`. Xero rotates the refresh token on every refresh; two processes sharing one file would invalidate each other.
 - **Roster:** `~/.xero-review/clients.json` mapping `slug -> {tenantId, tenantName, connected_on}`, populated from the `/connections` endpoint after login. `--list-clients` prints it. **Never guess a client**; the SKILL.md rule carries over verbatim.
 - **Refresh-token lifetime:** Xero's published limit is 60 days of non-use (PROBE-2 confirms). A run refreshes it; a client not reviewed for 60 days needs a re-login. `xero_collector.py --check-auth` reports days since last refresh per tenant and exits non-zero past 50.
@@ -102,6 +112,38 @@ Client output tree is unchanged: `~/Claude/clients/<slug>/reviews/audit-<YYYY-MM
 - **Header discipline:** every call carries `xero-tenant-id` explicitly. There is no "active tenant" fallback in the engine; the slug resolves to one tenant id at the top of the run and that id is stamped into `_manifest.json`.
 
 ---
+
+## 4A. Deployment portability (local now, hosted later)
+
+The engine is a batch job, not a web page. Hosting it means running the same Python engine on a server, triggered by a person or a schedule; it does not mean rebuilding the checks inside a browser app or a database's serverless functions. A web front end, if one is ever wanted, is a thin layer that starts runs and serves the finished deliverables.
+
+**Five seams, each one interface with two implementations.** Only the local implementation is built in Phases 1 to 4; the hosted one is Phase 7. No check module, renderer or pull stage may touch the filesystem, environment, or token file directly. They go through these:
+
+| Seam | Interface | Local (now) | Hosted (Phase 7) |
+|---|---|---|---|
+| Evidence and output | `EvidenceStore`: `put(key, bytes)`, `get(key)`, `list(prefix)`, `exists(key)` over `<slug>/reviews/audit-<YYYY-MM>/...` | `client_paths.py` tree under `~/Claude/clients/` | Encrypted object storage on the approved host, same key layout |
+| Tokens and secrets | `TokenStore`: `load(tenant)`, `save(tenant, tokens)` atomic; `client_secret()` | `~/.xero-review/tokens.json` (0600) and `.env` | The host's secrets manager; never a database column in plain text |
+| Client roster | `Roster`: `resolve(slug) -> tenantId`, `list()` | `~/.xero-review/clients.json` | A table on the approved host, same fields |
+| Run lock | `RunLock(tenant)`: one run per tenant at a time | File lock beside the token file | Row or advisory lock on the host |
+| OAuth redirect | `XERO_REVIEW_REDIRECT_URI` read from config, never hard-coded | `http://localhost:8766/callback` | The host's HTTPS callback, added as a second redirect URI on the same Books Collector Web app registration |
+
+The run lock matters more than it looks: Xero rotates the refresh token on every refresh, so two runs refreshing the same tenant at once can leave the stored token invalid and force a re-login. Locally this is rare; on a server with a schedule it is certain to happen eventually.
+
+**Selection:** `MHPE_DEPLOY=local|hosted` picks the implementation set at startup and prints the choice beside the existing `MHPE_RUN_MODE` line. Unset means `local`. An unknown value aborts the run rather than guessing.
+
+**Rules that hold in both modes:**
+- No client data in logs: log keys, counts, statuses and timings, never ledger rows, contact names or amounts.
+- Deliverables are never public links. Hosted output is reachable only by named MHPE staff.
+- The partner review gate is unchanged. Hosting changes where a draft sits, not who releases it.
+- `findings.json` and `_manifest.json` record `"deploy": "local"` or `"hosted"`, so a reviewer can tell where evidence was produced.
+
+**Compliance gate for the move (Phase 7 cannot start until all four are true):**
+1. The hosted target is approved under the MHPE acceptable use policy for client-identifying data.
+2. The 7216 consent for each client covers storage and processing at that host.
+3. Encryption at rest and access limited to named MHPE staff are confirmed on the host.
+4. Partner sign-off that the first hosted run's deliverables match a local run of the same month byte for byte (`--offline` from the same `raw/`).
+
+**Candidate hosts, in recommended order:** Verito (already in the firm stack and built for hosted CPA workloads, so the approval question may already be answered), an Azure tenant under the firm's Microsoft 365 agreement, then Supabase (the Lovable default, but client general ledgers in Supabase need explicit approval first). Phase 7 starts with the choice.
 
 ## 5. Xero API engineering rules (each prevents a silently wrong number)
 
@@ -427,9 +469,9 @@ Acceptance: every PROBE row in section 14 has a verdict and quoted evidence; `--
 
 ### Phase 1, pull layer and `xero_common.py` (Sonnet)
 
-Stages 0 to 5, `_manifest.json` v2 with `platform: xero`, `ReportWithRows` parser keyed by attribute id, Journals pager, explicit voided/deleted pass, paced executor. Copy the neutral modules into `core/` with `PROVENANCE.json`.
+Stages 0 to 5, `_manifest.json` v2 with `platform: xero`, `ReportWithRows` parser keyed by attribute id, Journals pager, explicit voided/deleted pass, paced executor. Copy the neutral modules into `core/` with `PROVENANCE.json`. Build the five section 4A interfaces with local implementations only, and route every file, token, roster and lock access through them.
 
-Acceptance: the three tie-out gates in section 12 pass on the Demo Company fixture; `--offline` re-run is byte-identical; a deliberately failed pull produces `FAILED:` in the log and the dependent checks report N/A in a smoke run of the coverage gate.
+Acceptance: a grep test proves no module outside the seam implementations opens files under `~/Claude/clients/`, reads the token file, or reads `.env` directly; the three tie-out gates in section 12 pass on the Demo Company fixture; `--offline` re-run is byte-identical; a deliberately failed pull produces `FAILED:` in the log and the dependent checks report N/A in a smoke run of the coverage gate.
 
 ### Phase 2, context and the four highest-value sections (Sonnet; PER-003 rules by Opus)
 
@@ -457,6 +499,12 @@ Move `core/` into `~/Claude/platform/review-core/`, repoint both engines. Prove 
 
 `xero_diagnostic.py` mirroring `diagnostic.py` and `monthly-run.md`. Not designed here; the pull layer and context from Phases 1 and 2 are sufficient inputs.
 
+### Phase 7, hosted deployment (Opus for the security design; Sonnet to build)
+
+Starts only when the four-item compliance gate in section 4A is met. Choose the host, build the hosted implementation of each of the five seams, add the hosted HTTPS redirect to the Books Collector registration, move the roster, and re-connect each tenant once against the hosted callback. Scheduling (for the Phase 6 monthly run) lives here too.
+
+Acceptance: the compliance gate's item 4 (hosted and local deliverables identical for the same `raw/`); a forced concurrent run on one tenant is refused by the run lock; the scope and secrets audit finds no client data in logs and no token outside the secrets manager.
+
 ---
 
 ## 14. PROBE list (Phase 0 resolves; the design does not depend on any answer)
@@ -474,6 +522,7 @@ Move `core/` into `~/Claude/platform/review-core/`, repoint both engines. Prove 
 | 9 | Do US Xero checks surface a check number on `BankTransaction.Reference`? | REC-008 alive or N/A |
 | 10 | Can an account with a non-zero balance be archived? | STRUCT-007 alive or PASS-by-construction |
 | 11 | When an approved invoice is edited in the UI (Demo Company), does the Journals endpoint mutate the journal in place, or post a reversal and a new journal? | PER-003 has a second, journal-side signal if reversals are posted |
+| 12 | Which scope a new (post-March-2026) app needs for the Bank Summary, Executive Summary and Budget Summary reports, and for bank transfers, linked transactions, repeating invoices, overpayments, prepayments and record history, and whether the Budgets endpoint uses `accounting.budgets.read` | Stage 5 report list; if a report is unreachable on a new app, its dependent checks report N/A naming the scope |
 
 ---
 
@@ -486,10 +535,11 @@ Move `core/` into `~/Claude/platform/review-core/`, repoint both engines. Prove 
 
 ---
 
-## 16. Decisions, settled 2026-09-03 (Scott Edwards)
+## 16. Decisions (Scott Edwards)
 
-Design is settled; only execution remains. Nothing in sections 0 to 15 is open.
+Settled 2026-09-03 (items 1 to 3) and 2026-10-16 (item 4). The only open item is the hosted target, which Phase 7 needs and Phases 0 to 6 do not.
 
 1. **Repository home: new private repo** `scotchua/xero-review-service`, cloned to `~/Claude/platform/xero-review-service`, same visibility as `qbo-review-service`. `xero-collector` is a directory inside it, not a third repo, unless Phase 0 finds a reason to share it with another consumer.
 2. **Fixture: Demo Company (US) snapshot first.** Phase 1 freezes it under `fixtures/demo-company-us/` and adds the slug to `FIXTURE_SLUGS`. An anonymised pilot fixture generated through `anonymize_run.py` is a Phase 4 deliverable, not earlier.
 3. **Phase 5 timing: leave until forced.** The copied `core/` modules stay in place with `PROVENANCE.json`. Extraction happens only when a third platform arrives or a QBO engine change has to be mirrored into the Xero copy. Until then, any bug fix to a copied module is applied in both places and noted in `PROVENANCE.json`.
+4. **Deployment: local first, built to move (2026-10-16).** The engine will not stay on one computer. Phases 1 to 4 build the section 4A seams with local implementations; Phase 7 adds the hosted ones. Books Collector is a Web app registration so a hosted HTTPS redirect can be added to it later. **Open:** which host. Recommended order in section 4A.

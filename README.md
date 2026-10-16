@@ -54,8 +54,8 @@ Custom connections require different scopes depending on when they were created.
 
 | Custom Connection Created | Required Scopes |
 |---------------------------|-----------------|
-| Before Apr 29, 2026 | [SCOPES_V1](src/clients/xero-client.ts#L154-L162) (bundled permissions) |
-| From Apr 29, 2026 | [SCOPES_V2](src/clients/xero-client.ts#L165-L181) (granular permissions) |
+| Before Apr 29, 2026 | [SCOPES_V1](src/clients/xero-client.ts#L151-L159) (bundled permissions) |
+| From Apr 29, 2026 | [SCOPES_V2](src/clients/xero-client.ts#L162-L178) (granular permissions) |
 
 > **Note:** The MCP server automatically tries V1 scopes first and falls back to V2 if needed.
 > 
@@ -161,7 +161,13 @@ Before the MCP client connects, authorize once from a terminal:
 npm run login
 ```
 
+The auth-code flow requests the granular [SCOPES_V2](src/clients/xero-client.ts#L162-L178) plus `openid profile email offline_access` by default, because apps registered from Apr 29, 2026 cannot request the bundled V1 scopes. An older app can set `XERO_SCOPES` to the V1 list instead.
+
 This opens a browser to Xero's consent screen; pick every organisation this app should have access to, then close the tab. Tokens (including the refresh token) are stored at `~/.xero-mcp/tokens.json` by default, so you generally only need to do this once, or again after adding access to a new organisation. Re-run `npm run login` any time to add more organisations to the same authorization.
+
+##### Checking what a new app's scopes allow
+
+`npm run probe` logs in with the auth-code flow and runs the tools this fork adds beyond Xero's hosted Remote MCP (journals, attachments, bank transfers, purchase orders, invoice PDF, account edits, deleting bank transactions) against Xero's **Demo Company only**; it refuses to run if no Demo Company is connected. Everything it creates is tagged `MHPE-PROBE-...` and deleted again, except a bank transfer, which the API cannot delete, so that step runs only with `npm run probe -- --write-transfer`. It prints the granted scopes and a PASS / BLOCKED / FAIL / SKIP table; BLOCKED means Xero refused the call for this token, usually a missing scope.
 
 Optional environment variables for this mode:
 
