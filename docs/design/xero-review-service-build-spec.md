@@ -93,15 +93,15 @@ Client output tree is unchanged: `~/Claude/clients/<slug>/reviews/audit-<YYYY-MM
 
 ## 4. Auth and collector (`xero-collector`)
 
-- **Grant type:** OAuth2 authorization code with PKCE (the flow `xero-mcp-server/src/login.ts` already implements in TypeScript; port the shape, not the code). Custom Connections (client credentials) were regionally restricted to AU/NZ/UK when last checked and are billed per org; **PROBE-1** confirms US availability, but the design does not depend on it.
+- **Grant type:** OAuth2 authorization code with a client secret, plus PKCE (the flow `xero-mcp-server/src/login.ts` already implements in TypeScript; port the shape, not the code). Custom Connections (client credentials) were regionally restricted to AU/NZ/UK when last checked and are billed per org; **PROBE-1** confirms US availability, but the design does not depend on it.
 - **App registrations (created 2026-10-16, Xero developer portal).** Two apps, kept separate so the review engine can never hold a write-capable credential:
 
   | App | Used by | Type | Redirect |
   |---|---|---|---|
   | MHPE Zero MCP | MCP server (`xero-mcp-server`) | Web app | `http://localhost:8765/callback` |
-  | MHPE Books Collector | Review engine (`xero-collector`) | PKCE | `http://localhost:8766/callback` |
+  | MHPE Books Collector | Review engine (`xero-collector`) | Web app | `http://localhost:8766/callback` |
 
-  Client ids live in 1Password, never in a repo or chat. Books Collector is a PKCE (mobile or desktop) app, so it has **no client secret**: the collector must implement PKCE without a secret and must not expect `XERO_CLIENT_SECRET`. The MCP server's existing auth-code flow defaults to port 3000; it needs `XERO_CALLBACK_PORT=8765` in its local `.env` to match its registered redirect. The collector's callback listener binds port 8766, and the redirect it sends must match the registration exactly.
+  Client ids and secrets live in 1Password, never in a repo or chat. Both apps are Web apps, so each has a **client secret**; the collector reads its own from a local `.env` (`XERO_REVIEW_CLIENT_ID`, `XERO_REVIEW_CLIENT_SECRET`) and never shares the MCP server's credentials or token file. Books Collector was first registered as a PKCE app and re-created as a Web app; the PKCE registration should be deleted in the portal so it cannot be used. The MCP server's existing auth-code flow defaults to port 3000; it needs `XERO_CALLBACK_PORT=8765` in its local `.env` to match its registered redirect. The collector's callback listener binds port 8766, and the redirect it sends must match the registration exactly.
 - **Books Collector scopes: read-only only:** `offline_access openid profile email accounting.settings.read accounting.contacts.read accounting.transactions.read accounting.reports.read accounting.journals.read accounting.attachments.read accounting.budgets.read`. No write scope is ever requested, so "nothing is ever written to Xero" is enforced by the token, not by discipline.
 - **Token store:** `~/.xero-review/tokens.json` (mode 0600, atomic write). Separate from the MCP server's `~/.xero-mcp/tokens.json`. Xero rotates the refresh token on every refresh; two processes sharing one file would invalidate each other.
 - **Roster:** `~/.xero-review/clients.json` mapping `slug -> {tenantId, tenantName, connected_on}`, populated from the `/connections` endpoint after login. `--list-clients` prints it. **Never guess a client**; the SKILL.md rule carries over verbatim.
