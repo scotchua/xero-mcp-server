@@ -521,8 +521,8 @@ Acceptance: the compliance gate's item 4 (hosted and local deliverables identica
 | 8 | Does an org always carry an OVERALL budget object, and what does an empty one look like? | BUDGET-001 predicate |
 | 9 | Do US Xero checks surface a check number on `BankTransaction.Reference`? | REC-008 alive or N/A |
 | 10 | Can an account with a non-zero balance be archived? | STRUCT-007 alive or PASS-by-construction |
-| 12 | Which scope a new (post-March-2026) app needs for the Bank Summary, Executive Summary, Budget Summary and TenNinetyNine reports, and whether the Budgets endpoint uses `accounting.budgets.read` | Stage 5 report list; if a report is unreachable on a new app, its dependent checks report N/A naming the scope |
 | 11 | When an approved invoice is edited in the UI (Demo Company), does the Journals endpoint mutate the journal in place, or post a reversal and a new journal? | PER-003 has a second, journal-side signal if reversals are posted |
+| 12 | Which scope a new (post-March-2026) app needs for the Bank Summary, Executive Summary, Budget Summary and TenNinetyNine reports, and whether the Budgets endpoint uses `accounting.budgets.read` | Stage 5 report list; if a report is unreachable on a new app, its dependent checks report N/A naming the scope |
 
 ---
 
