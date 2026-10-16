@@ -15,6 +15,7 @@ Internal name: "Xero audit engine." Every client-facing document is titled **Com
 - **Rewrite the pull layer and the check bodies against Xero's data model.** The check *intent* transfers almost one for one; the check *source* does not. Xero's Journals endpoint is a better general ledger than QBO's report, Xero exposes voided and deleted records with no 30-day cap, and the 1099 report exists natively. Xero also has no reconciled-through date, no discrepancy account, no sub-accounts, and no payroll for US orgs.
 - **US-only scope.** Both current Xero clients are US-domiciled (Scott, this session), so the TAX section (S-corp compensation, 1099, Ketchikan sales tax, WA B&O) transfers as-is.
 - **Direct Xero API from Python, read-only scopes, its own app registration.** Not through the MCP server, not sharing the MCP server's token file (refresh-token rotation makes two writers unsafe).
+- **Local first, built to move.** The engine runs on Scott's machine for the pilots and is written so it can run on a hosted server later without a rewrite: storage, tokens, client roster, run locking and the OAuth redirect each sit behind one small interface with a local implementation now and a hosted one later (section 4A). The hosted target is not chosen yet, and no client tenant connects to a hosted copy until that target is approved under the MHPE acceptable use policy.
 - **Target: roughly 85 to 95 declared checks** after dropping the ones Xero makes structurally impossible and adding the Xero-native ones. The exact count is fixed at the end of Phase 0, when the nine PROBE items in section 14 are settled against live tenants. A declared check that goes silent fails the run, exactly as in the QBO engine.
 
 ---
@@ -110,6 +111,38 @@ Client output tree is unchanged: `~/Claude/clients/<slug>/reviews/audit-<YYYY-MM
 - **Header discipline:** every call carries `xero-tenant-id` explicitly. There is no "active tenant" fallback in the engine; the slug resolves to one tenant id at the top of the run and that id is stamped into `_manifest.json`.
 
 ---
+
+## 4A. Deployment portability (local now, hosted later)
+
+The engine is a batch job, not a web page. Hosting it means running the same Python engine on a server, triggered by a person or a schedule; it does not mean rebuilding the checks inside a browser app or a database's serverless functions. A web front end, if one is ever wanted, is a thin layer that starts runs and serves the finished deliverables.
+
+**Five seams, each one interface with two implementations.** Only the local implementation is built in Phases 1 to 4; the hosted one is Phase 7. No check module, renderer or pull stage may touch the filesystem, environment, or token file directly. They go through these:
+
+| Seam | Interface | Local (now) | Hosted (Phase 7) |
+|---|---|---|---|
+| Evidence and output | `EvidenceStore`: `put(key, bytes)`, `get(key)`, `list(prefix)`, `exists(key)` over `<slug>/reviews/audit-<YYYY-MM>/...` | `client_paths.py` tree under `~/Claude/clients/` | Encrypted object storage on the approved host, same key layout |
+| Tokens and secrets | `TokenStore`: `load(tenant)`, `save(tenant, tokens)` atomic; `client_secret()` | `~/.xero-review/tokens.json` (0600) and `.env` | The host's secrets manager; never a database column in plain text |
+| Client roster | `Roster`: `resolve(slug) -> tenantId`, `list()` | `~/.xero-review/clients.json` | A table on the approved host, same fields |
+| Run lock | `RunLock(tenant)`: one run per tenant at a time | File lock beside the token file | Row or advisory lock on the host |
+| OAuth redirect | `XERO_REVIEW_REDIRECT_URI` read from config, never hard-coded | `http://localhost:8766/callback` | The host's HTTPS callback, added as a second redirect URI on the same Books Collector Web app registration |
+
+The run lock matters more than it looks: Xero rotates the refresh token on every refresh, so two runs refreshing the same tenant at once can leave the stored token invalid and force a re-login. Locally this is rare; on a server with a schedule it is certain to happen eventually.
+
+**Selection:** `MHPE_DEPLOY=local|hosted` picks the implementation set at startup and prints the choice beside the existing `MHPE_RUN_MODE` line. Unset means `local`. An unknown value aborts the run rather than guessing.
+
+**Rules that hold in both modes:**
+- No client data in logs: log keys, counts, statuses and timings, never ledger rows, contact names or amounts.
+- Deliverables are never public links. Hosted output is reachable only by named MHPE staff.
+- The partner review gate is unchanged. Hosting changes where a draft sits, not who releases it.
+- `findings.json` and `_manifest.json` record `"deploy": "local"` or `"hosted"`, so a reviewer can tell where evidence was produced.
+
+**Compliance gate for the move (Phase 7 cannot start until all four are true):**
+1. The hosted target is approved under the MHPE acceptable use policy for client-identifying data.
+2. The 7216 consent for each client covers storage and processing at that host.
+3. Encryption at rest and access limited to named MHPE staff are confirmed on the host.
+4. Partner sign-off that the first hosted run's deliverables match a local run of the same month byte for byte (`--offline` from the same `raw/`).
+
+**Candidate hosts, in recommended order:** Verito (already in the firm stack and built for hosted CPA workloads, so the approval question may already be answered), an Azure tenant under the firm's Microsoft 365 agreement, then Supabase (the Lovable default, but client general ledgers in Supabase need explicit approval first). Phase 7 starts with the choice.
 
 ## 5. Xero API engineering rules (each prevents a silently wrong number)
 
@@ -435,9 +468,9 @@ Acceptance: every PROBE row in section 14 has a verdict and quoted evidence; `--
 
 ### Phase 1, pull layer and `xero_common.py` (Sonnet)
 
-Stages 0 to 5, `_manifest.json` v2 with `platform: xero`, `ReportWithRows` parser keyed by attribute id, Journals pager, explicit voided/deleted pass, paced executor. Copy the neutral modules into `core/` with `PROVENANCE.json`.
+Stages 0 to 5, `_manifest.json` v2 with `platform: xero`, `ReportWithRows` parser keyed by attribute id, Journals pager, explicit voided/deleted pass, paced executor. Copy the neutral modules into `core/` with `PROVENANCE.json`. Build the five section 4A interfaces with local implementations only, and route every file, token, roster and lock access through them.
 
-Acceptance: the three tie-out gates in section 12 pass on the Demo Company fixture; `--offline` re-run is byte-identical; a deliberately failed pull produces `FAILED:` in the log and the dependent checks report N/A in a smoke run of the coverage gate.
+Acceptance: a grep test proves no module outside the seam implementations opens files under `~/Claude/clients/`, reads the token file, or reads `.env` directly; the three tie-out gates in section 12 pass on the Demo Company fixture; `--offline` re-run is byte-identical; a deliberately failed pull produces `FAILED:` in the log and the dependent checks report N/A in a smoke run of the coverage gate.
 
 ### Phase 2, context and the four highest-value sections (Sonnet; PER-003 rules by Opus)
 
@@ -464,6 +497,12 @@ Move `core/` into `~/Claude/platform/review-core/`, repoint both engines. Prove 
 ### Phase 6, optional, Xero monthly diagnostic (Sonnet)
 
 `xero_diagnostic.py` mirroring `diagnostic.py` and `monthly-run.md`. Not designed here; the pull layer and context from Phases 1 and 2 are sufficient inputs.
+
+### Phase 7, hosted deployment (Opus for the security design; Sonnet to build)
+
+Starts only when the four-item compliance gate in section 4A is met. Choose the host, build the hosted implementation of each of the five seams, add the hosted HTTPS redirect to the Books Collector registration, move the roster, and re-connect each tenant once against the hosted callback. Scheduling (for the Phase 6 monthly run) lives here too.
+
+Acceptance: the compliance gate's item 4 (hosted and local deliverables identical for the same `raw/`); a forced concurrent run on one tenant is refused by the run lock; the scope and secrets audit finds no client data in logs and no token outside the secrets manager.
 
 ---
 
@@ -494,10 +533,11 @@ Move `core/` into `~/Claude/platform/review-core/`, repoint both engines. Prove 
 
 ---
 
-## 16. Decisions, settled 2026-09-03 (Scott Edwards)
+## 16. Decisions (Scott Edwards)
 
-Design is settled; only execution remains. Nothing in sections 0 to 15 is open.
+Settled 2026-09-03 (items 1 to 3) and 2026-10-16 (item 4). The only open item is the hosted target, which Phase 7 needs and Phases 0 to 6 do not.
 
 1. **Repository home: new private repo** `scotchua/xero-review-service`, cloned to `~/Claude/platform/xero-review-service`, same visibility as `qbo-review-service`. `xero-collector` is a directory inside it, not a third repo, unless Phase 0 finds a reason to share it with another consumer.
 2. **Fixture: Demo Company (US) snapshot first.** Phase 1 freezes it under `fixtures/demo-company-us/` and adds the slug to `FIXTURE_SLUGS`. An anonymised pilot fixture generated through `anonymize_run.py` is a Phase 4 deliverable, not earlier.
 3. **Phase 5 timing: leave until forced.** The copied `core/` modules stay in place with `PROVENANCE.json`. Extraction happens only when a third platform arrives or a QBO engine change has to be mirrored into the Xero copy. Until then, any bug fix to a copied module is applied in both places and noted in `PROVENANCE.json`.
+4. **Deployment: local first, built to move (2026-10-16).** The engine will not stay on one computer. Phases 1 to 4 build the section 4A seams with local implementations; Phase 7 adds the hosted ones. Books Collector is a Web app registration so a hosted HTTPS redirect can be added to it later. **Open:** which host. Recommended order in section 4A.
